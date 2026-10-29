@@ -82,3 +82,115 @@ plt.legend(fontsize=10)
 
 plt.tight_layout()
 plt.show()
+
+
+
+
+# Finite difference method
+
+# Parameters
+N = 100  # Number of real-space grid points
+a = 0.5  # Grid spacing (Å)
+hbar = 1.0  # Reduced Planck constant
+m_input = 1.0  # Target mass we will simulate
+
+# Pre-factor for finite difference kinetic energy: t_eff = ħ^2 / (2 * m * a^2)
+t_eff = (hbar**2) / (2 * m_input * a**2)
+
+# Constructing the real-space tridiagonal Hamiltonian matrix (Periodic Boundary Conditions)
+H = np.zeros((N, N))
+for i in range(N):
+  H[i, i] = 2 * t_eff
+  H[i, (i + 1) % N] = -t_eff
+  H[i, (i - 1 + N) % N] = -t_eff
+
+# To find E(k), we can apply Bloch phase shifts or diagonalize across k-space
+# Alternatively, we can extract m* directly from the lowest eigenvectors / finite difference curvature.
+# Let's compute E(k) by evaluating the expectation value of the FD Hamiltonian with Bloch waves:
+k_grid = np.linspace(-np.pi / a, np.pi / a, 300)
+E_fd = np.zeros_like(k_grid)
+
+for idx, k in enumerate(k_grid):
+  # Construct Bloch-periodic Hamiltonian for a single unit cell / phase
+  # H_k = 2*t_eff - t_eff*exp(i*k*a) - t_eff*exp(-i*k*a) = 2*t_eff*(1 - cos(k*a))
+  E_fd[idx] = 2 * t_eff * (1- np.cos(k * a))
+  # Shift to match band bottom at -2*t_eff
+  E_fd[idx] -= 2 * t_eff
+
+# Fit curvature near k = 0 to recover m*
+k_mask = np.abs(k_grid) < 0.2
+k_fit = k_grid[k_mask]
+E_fit = E_fd[k_mask]
+
+coeffs = np.polyfit(k_fit**2, E_fit, 1)  # E(k) = c2 * k^2 + c0
+c2 = coeffs[0]
+m_extracted = (hbar**2) / (2 * c2)
+
+print(f'Input Mass (m*)        : {m_input:.4f}')
+print(f'Finite-Difference Fitted m* : {m_extracted:.4f}')
+
+# Plotting the Finite Difference Dispersion
+plt.figure(figsize=(7, 4.5))
+plt.plot(
+    k_grid,
+    E_fd,
+    color='darkviolet',
+    lw=2.5,
+    label='Finite-Difference Dispersion $E(k)$',
+)
+plt.plot(
+    k_fit,
+    coeffs[1] + coeffs[0] * k_fit**2,
+    'r--',
+    lw=2,
+    label=f'Quadratic Fit ($m^* = {m_extracted:.4f}$)',
+)
+plt.xlabel('Wavevector $k$ ($1/\AA$)', fontsize=11)
+plt.ylabel('Energy $E$ (eV)', fontsize=11)
+plt.title(
+    'Band Dispersion & Curvature Extracted via Finite-Difference Method',
+    fontsize=11,
+)
+plt.grid(True, linestyle='--', alpha=0.5)
+plt.legend(fontsize=10)
+plt.tight_layout()
+plt.show()
+
+
+
+### SECOND METHOD ####
+N = 500  # Number of grid points
+a = 1.0  # Grid spacing in Å
+hbar_sq_over_2m0 = 3.810  # eV·Å^2
+m_target = 0.5  # Target effective mass in units of m0
+
+# Finite difference prefactor (t_eff = ħ^2 / (2 * m* * a^2))
+t_eff = hbar_sq_over_2m0 / (m_target * a**2)
+
+# Correctly construct 1-D arrays for diagonal and off-diagonal elements
+diag = 2 * t_eff * np.ones(N)
+off_diag = -t_eff * np.ones(N - 1)
+
+# Build the real-space finite-difference matrix
+H = np.diag(diag) + np.diag(off_diag, k=1) + np.diag(off_diag, k=-1)
+
+num_levels = 10
+
+energies, wavefunctions = eigh(H, subset_by_index=[0, num_levels - 1])
+
+print(f'--- FIRST {num_levels} ENERGY LEVELS ---')
+for i, E in enumerate(energies):
+  print(f'E_{i+1} = {E:.4f} eV')
+plt.figure(figsize=(8, 5))
+for i in range(min(4, num_levels)):
+  plt.plot(
+      wavefunctions[:, i] + energies[i], label=f'State $n={i+1}$ ($E$={energies[i]:.2f} eV)'
+  )
+
+plt.xlabel('Grid Point Index $j$', fontsize=11)
+plt.ylabel('Energy / Wavefunction Amplitude (eV)', fontsize=11)
+plt.title('Finite-Difference Energy Eigenvalues & Wavefunctions', fontsize=12)
+plt.grid(True, linestyle='--', alpha=0.5)
+plt.legend(fontsize=9, loc='upper right')
+plt.tight_layout()
+plt.show()
